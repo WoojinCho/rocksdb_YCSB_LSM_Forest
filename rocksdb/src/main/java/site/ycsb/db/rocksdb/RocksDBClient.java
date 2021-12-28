@@ -42,6 +42,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
  */
 public class RocksDBClient extends DB {
 
+  //static final Statistics STATS_WOOJIN = new Statistics();
   static final String PROPERTY_ROCKSDB_DIR = "rocksdb.dir";
   static final String PROPERTY_ROCKSDB_OPTIONS_FILE = "rocksdb.optionsfile";
   private static final String COLUMN_FAMILY_NAMES_FILENAME = "CF_NAMES";
@@ -50,9 +51,11 @@ public class RocksDBClient extends DB {
 
   @GuardedBy("RocksDBClient.class") private static Path rocksDbDir = null;
   @GuardedBy("RocksDBClient.class") private static Path optionsFile = null;
-  @GuardedBy("RocksDBClient.class") private static RocksObject dbOptions = null;
+  //@GuardedBy("RocksDBClient.class") private static RocksObject dbOptions = null;
+  @GuardedBy("RocksDBClient.class") private static DBOptions dbOptions = null;
   @GuardedBy("RocksDBClient.class") private static RocksDB rocksDb = null;
   @GuardedBy("RocksDBClient.class") private static int references = 0;
+  //@GuardedBy("RocksDBClient.class") private static Statistics stats = new Statistics();
 
   private static final ConcurrentMap<String, ColumnFamily> COLUMN_FAMILIES = new ConcurrentHashMap<>();
   private static final ConcurrentMap<String, Lock> COLUMN_FAMILY_LOCKS = new ConcurrentHashMap<>();
@@ -73,9 +76,9 @@ public class RocksDBClient extends DB {
         try {
           if (optionsFile != null) {
             rocksDb = initRocksDBWithOptionsFile();
-          } else {
-            rocksDb = initRocksDB();
-          }
+          } //else {
+            //rocksDb = initRocksDB();
+          //}
         } catch (final IOException | RocksDBException e) {
           throw new DBException(e);
         }
@@ -105,7 +108,19 @@ public class RocksDBClient extends DB {
     OptionsUtil.loadOptionsFromFile(optionsFile.toAbsolutePath().toString(), Env.getDefault(), options, cfDescriptors);
     dbOptions = options;
 
+
+    Statistics stats = new Statistics();
+
+    options.setStatistics(stats);
+
     final RocksDB db = RocksDB.open(options, rocksDbDir.toAbsolutePath().toString(), cfDescriptors, cfHandles);
+
+    final BlockBasedTableConfig tableoptions = new BlockBasedTableConfig();
+    Cache cache = new LRUCache(128 * 1024 * 1024, 6);
+    tableoptions.setBlockCache(cache);
+    tableoptions.setCacheIndexAndFilterBlocks(true);
+    //tableoptions.setFilterPolicy(bloomFilter);
+    //options.setTableFormatConfig(tableoptions);
 
     for(int i = 0; i < cfDescriptors.size(); i++) {
       String cfName = new String(cfDescriptors.get(i).getName());
@@ -125,7 +140,7 @@ public class RocksDBClient extends DB {
    *
    * @return The initialized and open RocksDB instance.
    */
-  private RocksDB initRocksDB() throws IOException, RocksDBException {
+  /*private RocksDB initRocksDB() throws IOException, RocksDBException {
     if(!Files.exists(rocksDbDir)) {
       Files.createDirectories(rocksDbDir);
     }
@@ -173,10 +188,11 @@ public class RocksDBClient extends DB {
       }
       return db;
     }
-  }
+  }*/
 
   @Override
   public void cleanup() throws DBException {
+
     super.cleanup();
 
     synchronized (RocksDBClient.class) {
@@ -184,6 +200,25 @@ public class RocksDBClient extends DB {
         if (references == 1) {
           for (final ColumnFamily cf : COLUMN_FAMILIES.values()) {
             cf.getHandle().close();
+          }
+
+          //DBOptions options = new DBOptions();
+
+          //options=dbOptions.getNativeHandle();
+
+          //final Statistics stats = options.statistics();
+
+          try {
+            /*for (final TickerType statsType : TickerType.values()) {
+              if (statsType != TickerType.TICKER_ENUM_MAX) {
+                System.out.println(statsType + "\t" + dbOptions.statistics().getTickerCount(statsType));
+              }
+              //System.out.println("woojini " + dbOptions.statistics().getTickerCount(statsType));
+            }*/
+            System.out.println(dbOptions.statistics().toString());
+          } catch (final Exception e) {
+            System.out.println("Failed in call to getTickerCount()");
+            assert (false); //Should never reach here.
           }
 
           rocksDb.close();
@@ -217,12 +252,15 @@ public class RocksDBClient extends DB {
         createColumnFamily(table);
       }
 
-      final ColumnFamilyHandle cf = COLUMN_FAMILIES.get(table).getHandle();
-      final byte[] values = rocksDb.get(cf, key.getBytes(UTF_8));
-      if(values == null) {
-        return Status.NOT_FOUND;
+      for(String field : fields){
+        //final ColumnFamilyHandle cf = COLUMN_FAMILIES.get(table).getHandle();
+        final ColumnFamilyHandle cf = COLUMN_FAMILIES.get(field).getHandle();
+        final byte[] values = rocksDb.get(cf, key.getBytes(UTF_8));
+        if(values == null) {
+          return Status.NOT_FOUND;
+        }
+        deserializeValues(values, fields, result);
       }
-      deserializeValues(values, fields, result);
       return Status.OK;
     } catch(final RocksDBException e) {
       LOGGER.error(e.getMessage(), e);
@@ -238,15 +276,18 @@ public class RocksDBClient extends DB {
         createColumnFamily(table);
       }
 
-      final ColumnFamilyHandle cf = COLUMN_FAMILIES.get(table).getHandle();
-      try(final RocksIterator iterator = rocksDb.newIterator(cf)) {
-        int iterations = 0;
-        for (iterator.seek(startkey.getBytes(UTF_8)); iterator.isValid() && iterations < recordcount;
-             iterator.next()) {
-          final HashMap<String, ByteIterator> values = new HashMap<>();
-          deserializeValues(iterator.value(), fields, values);
-          result.add(values);
-          iterations++;
+      for (String field : fields){
+        //final ColumnFamilyHandle cf = COLUMN_FAMILIES.get(table).getHandle();
+        final ColumnFamilyHandle cf = COLUMN_FAMILIES.get(field).getHandle();
+        try(final RocksIterator iterator = rocksDb.newIterator(cf)) {
+          int iterations = 0;
+          for (iterator.seek(startkey.getBytes(UTF_8)); iterator.isValid() && iterations < recordcount;
+              iterator.next()) {
+            final HashMap<String, ByteIterator> values = new HashMap<>();
+            deserializeValues(iterator.value(), fields, values);
+            result.add(values);
+            iterations++;
+          }
         }
       }
 
@@ -265,23 +306,22 @@ public class RocksDBClient extends DB {
       if (!COLUMN_FAMILIES.containsKey(table)) {
         createColumnFamily(table);
       }
+      for(final Map.Entry<String, ByteIterator> value : values.entrySet()) {
+        final ColumnFamilyHandle cf = COLUMN_FAMILIES.get(value.getKey()).getHandle();
+        final Map<String, ByteIterator> result = new HashMap<>();
+        final byte[] currentValues = rocksDb.get(cf, key.getBytes(UTF_8));
+        if(currentValues == null) {
+          return Status.NOT_FOUND;
+        }
+        deserializeValues(currentValues, null, result);
 
-      final ColumnFamilyHandle cf = COLUMN_FAMILIES.get(table).getHandle();
-      final Map<String, ByteIterator> result = new HashMap<>();
-      final byte[] currentValues = rocksDb.get(cf, key.getBytes(UTF_8));
-      if(currentValues == null) {
-        return Status.NOT_FOUND;
+        //update
+        result.putAll(values);
+
+        //store
+        rocksDb.put(cf, key.getBytes(UTF_8), serializeValues(result));
       }
-      deserializeValues(currentValues, null, result);
-
-      //update
-      result.putAll(values);
-
-      //store
-      rocksDb.put(cf, key.getBytes(UTF_8), serializeValues(result));
-
       return Status.OK;
-
     } catch(final RocksDBException | IOException e) {
       LOGGER.error(e.getMessage(), e);
       return Status.ERROR;
@@ -294,9 +334,32 @@ public class RocksDBClient extends DB {
       if (!COLUMN_FAMILIES.containsKey(table)) {
         createColumnFamily(table);
       }
+      final ByteArrayOutputStream baos = new ByteArrayOutputStream();
+      final ByteBuffer buf = ByteBuffer.allocate(4);
+      for(final Map.Entry<String, ByteIterator> value : values.entrySet()) {
+        final byte[] keyBytes = value.getKey().getBytes(UTF_8);
+        final byte[] valueBytes = value.getValue().toArray();
 
-      final ColumnFamilyHandle cf = COLUMN_FAMILIES.get(table).getHandle();
-      rocksDb.put(cf, key.getBytes(UTF_8), serializeValues(values));
+        baos.reset();
+
+        buf.putInt(keyBytes.length);
+        baos.write(buf.array());
+        baos.write(keyBytes);
+
+        final ColumnFamilyHandle cf = COLUMN_FAMILIES.get(value.getKey()).getHandle();
+
+        buf.clear();
+
+        buf.putInt(valueBytes.length);
+        baos.write(buf.array());
+        baos.write(valueBytes);
+
+        buf.clear();
+
+        rocksDb.put(cf, key.getBytes(UTF_8), baos.toByteArray());
+      }
+      //final ColumnFamilyHandle cf = COLUMN_FAMILIES.get(table).getHandle();
+      //rocksDb.put(cf, key.getBytes(UTF_8), serializeValues(values));
 
       return Status.OK;
     } catch(final RocksDBException | IOException e) {

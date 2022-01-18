@@ -24,7 +24,7 @@ NOTE: RocksDB is an embedded database and so articles like [How to run in parall
 
 Clone the YCSB git repository and compile:
 
-    git clone https://github.com/brianfrankcooper/YCSB.git
+    git clone https://github.com/WoojinCho/rocksdb_YCSB_LSM_Forest.git
     cd YCSB
     mvn -pl site.ycsb:rocksdb-binding -am clean package
 

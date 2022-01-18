@@ -1,6 +1,5 @@
 <!--
-Copyright (c) 2010 Yahoo! Inc., 2012 - 2016 YCSB contributors.
-All rights reserved.
+Copyright (c) 2012 - 2018 YCSB contributors. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License"); you
 may not use this file except in compliance with the License. You
@@ -16,65 +15,37 @@ permissions and limitations under the License. See accompanying
 LICENSE file.
 -->
 
-YCSB
-====================================
-[![Build Status](https://travis-ci.org/brianfrankcooper/YCSB.png?branch=master)](https://travis-ci.org/brianfrankcooper/YCSB)
+## Quick Start
 
+This section describes how to run YCSB on RocksDB running locally (within the same JVM).
+NOTE: RocksDB is an embedded database and so articles like [How to run in parallel](https://github.com/brianfrankcooper/YCSB/wiki/Running-a-Workload-in-Parallel) are not applicable here.
 
+### 1. Set Up YCSB
 
-Links
------
-* To get here, use https://ycsb.site
-* [Our project docs](https://github.com/brianfrankcooper/YCSB/wiki)
-* [The original announcement from Yahoo!](https://labs.yahoo.com/news/yahoo-cloud-serving-benchmark/)
+Clone the YCSB git repository and compile:
 
-Getting Started
----------------
+    git clone https://github.com/brianfrankcooper/YCSB.git
+    cd YCSB
+    mvn -pl site.ycsb:rocksdb-binding -am clean package
 
-1. Download the [latest release of YCSB](https://github.com/brianfrankcooper/YCSB/releases/latest):
+### 2. Run YCSB
 
-    ```sh
-    curl -O --location https://github.com/brianfrankcooper/YCSB/releases/download/0.17.0/ycsb-0.17.0.tar.gz
-    tar xfvz ycsb-0.17.0.tar.gz
-    cd ycsb-0.17.0
-    ```
-    
-2. Set up a database to benchmark. There is a README file under each binding 
-   directory.
+Now you are ready to run! First, load the data:
 
-3. Run YCSB command. 
+    ./bin/ycsb load rocksdb -s -P workloads/workloada -p rocksdb.dir=/tmp/ycsb-rocksdb-data
 
-    On Linux:
-    ```sh
-    bin/ycsb.sh load basic -P workloads/workloada
-    bin/ycsb.sh run basic -P workloads/workloada
-    ```
+Then, run the workload:
 
-    On Windows:
-    ```bat
-    bin/ycsb.bat load basic -P workloads\workloada
-    bin/ycsb.bat run basic -P workloads\workloada
-    ```
+    ./bin/ycsb run rocksdb -s -P workloads/workloada -p rocksdb.dir=/tmp/ycsb-rocksdb-data
 
-  Running the `ycsb` command without any argument will print the usage. 
-   
-  See https://github.com/brianfrankcooper/YCSB/wiki/Running-a-Workload
-  for a detailed documentation on how to run a workload.
+## RocksDB Configuration Parameters
 
-  See https://github.com/brianfrankcooper/YCSB/wiki/Core-Properties for 
-  the list of available workload properties.
+* ```rocksdb.dir``` - (required) A path to a folder to hold the RocksDB data files.
+    * EX. ```/tmp/ycsb-rocksdb-data```
+* ```rocksdb.optionsfile``` - A path to a [RocksDB options file](https://github.com/facebook/rocksdb/wiki/RocksDB-Options-File).
+    * EX. ```ycsb-rocksdb-options.ini```
 
+## Note on RocksDB Options
 
-Building from source
---------------------
-
-YCSB requires the use of Maven 3; if you use Maven 2, you may see [errors
-such as these](https://github.com/brianfrankcooper/YCSB/issues/406).
-
-To build the full distribution, with all database bindings:
-
-    mvn clean package
-
-To build a single database binding:
-
-    mvn -pl site.ycsb:mongodb-binding -am clean package
+If `rocksdb.optionsfile` is given, YCSB will apply all [RocksDB options](https://github.com/facebook/rocksdb/wiki/Setup-Options-and-Basic-Tuning) exactly as specified in the options file.
+Otherwise, YCSB will try to set reasonable defaults.
